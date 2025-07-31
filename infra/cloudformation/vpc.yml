@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: VPC with one public and one private subnet, NAT Gateway, Internet Gateway, and routing for CodeBuild
+
+Resources:
+  # VPC
+  MiracleImpliedVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Owner
+          Value: MiracleImplied
+        - Key: Name
+          Value: MiracleImpliedVPC
+
+  # Public Subnet
+  MiracleImpliedPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MiracleImpliedVPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZone: "ap-southeast-1a"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: MiracleImpliedPublicSubnet
+
+  # Private Subnet
+  MiracleImpliedPrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MiracleImpliedVPC
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZone: "ap-southeast-1a"
+      Tags:
+        - Key: Name
+          Value: MiracleImpliedPrivateSubnet
+
+  # Internet Gateway
+  MiracleImpliedIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MiracleImpliedIGW
+
+  # Attach IGW to VPC
+  AttachInternetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MiracleImpliedVPC
+      InternetGatewayId: !Ref MiracleImpliedIGW
+
+  # Elastic IP for NAT
+  MiracleImpliedNatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  # NAT Gateway in Public Subnet
+  MiracleImpliedNATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt MiracleImpliedNatEIP.AllocationId
+      SubnetId: !Ref MiracleImpliedPublicSubnet
+      Tags:
+        - Key: Name
+          Value: MiracleImpliedNATGateway
+
+  # Public Route Table
+  MiracleImpliedPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MiracleImpliedVPC
+      Tags:
+        - Key: Name
+          Value: MiracleImpliedPublicRouteTable
+
+  # Route from public subnet to internet
+  PublicInternetRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref MiracleImpliedPublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref MiracleImpliedIGW
+
+  # Associate Public Subnet with Route Table
+  AssociatePublicRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MiracleImpliedPublicSubnet
+      RouteTableId: !Ref MiracleImpliedPublicRouteTable
+
+  # Private Route Table
+  MiracleImpliedPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MiracleImpliedVPC
+      Tags:
+        - Key: Name
+          Value: MiracleImpliedPrivateRouteTable
+
+  # Route from private subnet to internet via NAT
+  PrivateRouteToInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref MiracleImpliedPrivateRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref MiracleImpliedNATGateway
+
+  # Associate Private Subnet with Private Route Table
+  AssociatePrivateRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MiracleImpliedPrivateSubnet
+      RouteTableId: !Ref MiracleImpliedPrivateRouteTable
+
+  # CodeBuild Security Group
+  CodeBuildSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for CodeBuild
+      VpcId: !Ref MiracleImpliedVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: CodeBuildSecurityGroup
+
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref MiracleImpliedVPC
+    Export:
+      Name: VPCId
+
+  PublicSubnetId:
+    Description: Public Subnet ID
+    Value: !Ref MiracleImpliedPublicSubnet
+    Export:
+      Name: PublicSubnetId
+
+  PrivateSubnetId:
+    Description: Private Subnet ID
+    Value: !Ref MiracleImpliedPrivateSubnet
+    Export:
+      Name: PrivateSubnetId
+
+  SecurityGroupId:
+    Description: CodeBuild Security Group ID
+    Value: !Ref CodeBuildSecurityGroup
+    Export:
+      Name: SecurityGroupId
+
+  InternetGatewayId:
+    Description: Internet Gateway ID
+    Value: !Ref MiracleImpliedIGW
+    Export:
+      Name: InternetGatewayId
+
+  NATGatewayId:
+    Description: NAT Gateway ID
+    Value: !Ref MiracleImpliedNATGateway
+    Export:
+      Name: NATGatewayId
+
+  PrivateRouteTableId:
+    Description: Private Route Table ID
+    Value: !Ref MiracleImpliedPrivateRouteTable
+    Export:
+      Name: PrivateRouteTableId
+
+  PublicRouteTableId:
+    Description: Public Route Table ID
+    Value: !Ref MiracleImpliedPublicRouteTable
+    Export:
+      Name: PublicRouteTableId
+
+  NatEIPAllocationId:
+    Description: Elastic IP Allocation ID for NAT Gateway
+    Value: !GetAtt MiracleImpliedNatEIP.AllocationId
+    Export:
+      Name: NatEIPAllocationId
+

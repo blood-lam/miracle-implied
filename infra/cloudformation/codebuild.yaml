@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodeBuild project using a VPC from the VPC template
+
+Parameters:
+  GitHubRepository:
+    Type: String
+    Description: GitHub Repository URL (e.g., https://github.com/yourusername/yourrepo)
+  GitHubSecretAccessKey:
+    Type: String
+    NoEcho: true
+    Description: GitHub Secret Access Key for webhook authentication
+
+Resources:
+  # Create IAM Role for CodeBuild
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "codebuild.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "CodeBuildPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:*"
+                  - "logs:*"
+                  - "cloudwatch:*"
+                  - "iam:PassRole"
+                  - "codebuild:BatchGetReports"
+                  - "codebuild:StartBuild"
+                  - "codebuild:BatchGetBuilds"
+                Resource: "*"
+
+  # Create CodeBuild Project
+  MyCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: "MyCodeBuildProject"
+      Source:
+        Type: GITHUB
+        Location: !Ref GitHubRepository
+      Artifacts:
+        Type: S3
+        Location: !Sub "codebuild-artifacts-${AWS::AccountId}"
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:5.0
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      VpcConfig:
+        VpcId: !ImportValue VPCId
+        Subnets:
+          - !ImportValue PrivateSubnetId
+        SecurityGroupIds:
+          - !ImportValue SecurityGroupId
+
+  # Create GitHub Webhook for triggering CodeBuild
+  GitHubWebhook:
+    Type: AWS::CodeBuild::Webhook
+    Properties:
+      ProjectName: !Ref MyCodeBuildProject
+      Filters:
+        - Type: EVENT
+          Pattern: PUSH
+      Authentication: GITHUB_WEBHOOK
+      AuthenticationToken: !Ref GitHubSecretAccessKey
+      PayloadUrl: !Sub "https://github.com/yourusername/yourrepo"
+
+Outputs:
+  CodeBuildProjectName:
+    Description: "CodeBuild Project Name"
+    Value: !Ref MyCodeBuildProject

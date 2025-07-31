@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda to enable/disable NAT Gateway to reduce costs
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: NatGatewayControlLambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: NatGatewayPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNatGateway
+                  - ec2:DeleteNatGateway
+                  - ec2:DescribeNatGateways
+                  - ec2:CreateRoute
+                  - ec2:CreateTags
+                  - ec2:ReplaceRoute
+                  - ec2:DeleteRoute
+                  - ec2:DescribeRouteTables
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  NatGatewayToggleFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ToggleNatGateway
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 300
+      Environment:
+        Variables:
+          ALLOCATION_ID: !ImportValue NatEIPAllocationId
+          PUBLIC_SUBNET_ID: !ImportValue PublicSubnetId
+          PRIVATE_ROUTE_TABLE_ID: !ImportValue PrivateRouteTableId
+      Code:
+        S3Bucket: miracle-implied-cft-template
+        S3Key: toggle-nat-gateway/index.zip
+
+  # Schedule to TURN OFF at 10 PM UTC
+  ScheduleOff:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ScheduleTurnOffNAT
+      ScheduleExpression: cron(0 15 * * ? *)  # 10PM UTC daily
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt NatGatewayToggleFunction.Arn
+          Id: "TurnOffNAT"
+          Input: '{"action": "OFF"}'
+
+  # Schedule to TURN ON at 8 AM UTC
+  ScheduleOn:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ScheduleTurnOnNAT
+      ScheduleExpression: cron(0 1 * * ? *)  # 8AM UTC daily
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt NatGatewayToggleFunction.Arn
+          Id: "TurnOnNAT"
+          Input: '{"action": "ON"}'
+
+  # Grant permissions for EventBridge to invoke Lambda
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref NatGatewayToggleFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScheduleOff.Arn
+
+  LambdaInvokePermissionOn:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref NatGatewayToggleFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScheduleOn.Arn
+
+Outputs:
+  LambdaFunctionName:
+    Value: !Ref NatGatewayToggleFunction
+  ToggleRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
