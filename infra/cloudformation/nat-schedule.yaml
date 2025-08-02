@@ -60,7 +60,10 @@ Resources:
     Properties:
       Name: ScheduleTurnOffNAT
       ScheduleExpression: cron(0 15 * * ? *)  # 10PM UTC daily
-      State: ENABLED
+      State: DISABLED
+      # Enable this rule when you want to turn off NAT Gateway
+      # Change to ENABLED when you want to activate the schedule
+      # State: ENABLED
       Targets:
         - Arn: !GetAtt NatGatewayToggleFunction.Arn
           Id: "TurnOffNAT"
@@ -72,7 +75,10 @@ Resources:
     Properties:
       Name: ScheduleTurnOnNAT
       ScheduleExpression: cron(0 1 * * ? *)  # 8AM UTC daily
-      State: ENABLED
+      State: DISABLED
+      # Enable this rule when you want to turn on NAT Gateway
+      # Change to ENABLED when you want to activate the schedule
+      # State: ENABLED
       Targets:
         - Arn: !GetAtt NatGatewayToggleFunction.Arn
           Id: "TurnOnNAT"

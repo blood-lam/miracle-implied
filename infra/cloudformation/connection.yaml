@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Connection for CodeBuild to GitHub using CodeStar Connections
+
+Resources:
+  # Create a CodeStar connection to GitHub
+  MIGitHubConnection:
+    Type: AWS::CodeStarConnections::Connection
+    Properties:
+      ConnectionName: MiracleImpliedGitHubConnection
+      ProviderType: GitHub
+      Tags:
+        - Key: Name
+          Value: MIGitHubConnection
+
+Outputs:
+  MIGitHubConnectionArn:
+    Description: ARN of the CodeStar connection to GitHub
+    Value: !Ref MIGitHubConnection
+    Export:
+      Name: MIGitHubConnectionArn
+

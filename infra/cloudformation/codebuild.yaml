@@ -2,13 +2,13 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: CodeBuild project using a VPC from the VPC template
 
 Parameters:
+  ProjectName:
+    Type: String
+    Description: Name of the CodeBuild project
+    Default: "MiracleImpliedCodeBuildProject"
   GitHubRepository:
     Type: String
     Description: GitHub Repository URL (e.g., https://github.com/yourusername/yourrepo)
-  GitHubSecretAccessKey:
-    Type: String
-    NoEcho: true
-    Description: GitHub Secret Access Key for webhook authentication
 
 Resources:
   # Create IAM Role for CodeBuild
@@ -23,36 +23,101 @@ Resources:
               Service: "codebuild.amazonaws.com"
             Action: "sts:AssumeRole"
       Policies:
-        - PolicyName: "CodeBuildPolicy"
+        - PolicyName: "CodeBuildBasePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub
+                    - arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}
+                    - { ProjectName: !Ref ProjectName }
+                  - !Sub
+                    - arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}:*
+                    - { ProjectName: !Ref ProjectName }
+
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                Resource:
+                  - arn:aws:s3:::codepipeline-ap-southeast-1-*
+                  - arn:aws:s3:::codepipeline-ap-southeast-1-*/*
+
+              - Effect: Allow
+                Action:
+                  - codebuild:CreateReportGroup
+                  - codebuild:CreateReport
+                  - codebuild:UpdateReport
+                  - codebuild:BatchPutTestCases
+                  - codebuild:BatchPutCodeCoverages
+                Resource:
+                  - !Sub
+                    - arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/${ProjectName}-*
+                    - { ProjectName: !Ref ProjectName }
+        - PolicyName: "CodeBuildVpcAccessPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeDhcpOptions
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterfacePermission
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*
+                Condition:
+                  StringEquals:
+                    ec2:Subnet:
+                      - !Sub
+                        - arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${PrivateSubnetId}
+                        - { PrivateSubnetId: !ImportValue PrivateSubnetId }
+                    ec2:AuthorizedService: codebuild.amazonaws.com
+        - PolicyName: "CodeBuildCodeConnectionsSourceCredentialsPolicy"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action:
-                  - "s3:*"
-                  - "logs:*"
-                  - "cloudwatch:*"
-                  - "iam:PassRole"
-                  - "codebuild:BatchGetReports"
-                  - "codebuild:StartBuild"
-                  - "codebuild:BatchGetBuilds"
-                Resource: "*"
+                  - "codeconnections:GetConnectionToken"
+                  - "codeconnections:GetConnection"
+                  - "codeconnections:UseConnection"
+                Resource: !ImportValue MIGitHubConnectionArn
 
   # Create CodeBuild Project
-  MyCodeBuildProject:
+  MICodeBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: "MyCodeBuildProject"
+      Name: !Ref ProjectName
       Source:
         Type: GITHUB
         Location: !Ref GitHubRepository
+        GitCloneDepth: 1
+        # BuildSpec: "buildspec.yaml"
+        ReportBuildStatus: true
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: !ImportValue MIGitHubConnectionArn
       Artifacts:
-        Type: S3
-        Location: !Sub "codebuild-artifacts-${AWS::AccountId}"
+        Type: NO_ARTIFACTS
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0
+        Image: aws/codebuild/amazonlinux-x86_64-standard:5.0
       ServiceRole: !GetAtt CodeBuildServiceRole.Arn
       VpcConfig:
         VpcId: !ImportValue VPCId
@@ -60,20 +125,13 @@ Resources:
           - !ImportValue PrivateSubnetId
         SecurityGroupIds:
           - !ImportValue SecurityGroupId
-
-  # Create GitHub Webhook for triggering CodeBuild
-  GitHubWebhook:
-    Type: AWS::CodeBuild::Webhook
-    Properties:
-      ProjectName: !Ref MyCodeBuildProject
-      Filters:
-        - Type: EVENT
-          Pattern: PUSH
-      Authentication: GITHUB_WEBHOOK
-      AuthenticationToken: !Ref GitHubSecretAccessKey
-      PayloadUrl: !Sub "https://github.com/yourusername/yourrepo"
+      Tags:
+        - Key: Name
+          Value: "MICodeBuildProject"
+        - Key: Project
+          Value: "MiracleImplied"
 
 Outputs:
   CodeBuildProjectName:
     Description: "CodeBuild Project Name"
-    Value: !Ref MyCodeBuildProject
+    Value: !Ref MICodeBuildProject
