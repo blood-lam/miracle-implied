@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: NAT Gateway with Elastic IP for private subnet routing
+
+Resources:
+  
+  # Elastic IP for NAT
+  MiracleImpliedNatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  # NAT Gateway in Public Subnet
+  MiracleImpliedNATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt MiracleImpliedNatEIP.AllocationId
+      SubnetId: !ImportValue PublicSubnetId
+      Tags:
+        - Key: Name
+          Value: MiracleImpliedNATGateway
+
+    # Route from private subnet to internet via NAT
+  PrivateRouteToInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !ImportValue PrivateRouteTableId
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref MiracleImpliedNATGateway
+
+Outputs:
+  NatEIPAllocationId:
+    Description: "Elastic IP Allocation ID for NAT Gateway"
+    Value: !GetAtt MiracleImpliedNatEIP.AllocationId
+    Export:
+      Name: NatEIPAllocationId

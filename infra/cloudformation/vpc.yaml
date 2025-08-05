@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: VPC with one public and one private subnet, NAT Gateway, Internet Gateway, and routing for CodeBuild
+Description: VPC with one public and one private subnet, Internet Gateway, and routing for CodeBuild
 
 Resources:
   # VPC
@@ -53,22 +53,6 @@ Resources:
       VpcId: !Ref MiracleImpliedVPC
       InternetGatewayId: !Ref MiracleImpliedIGW
 
-  # Elastic IP for NAT
-  MiracleImpliedNatEIP:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-
-  # NAT Gateway in Public Subnet
-  MiracleImpliedNATGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt MiracleImpliedNatEIP.AllocationId
-      SubnetId: !Ref MiracleImpliedPublicSubnet
-      Tags:
-        - Key: Name
-          Value: MiracleImpliedNATGateway
-
   # Public Route Table
   MiracleImpliedPublicRouteTable:
     Type: AWS::EC2::RouteTable
@@ -101,14 +85,6 @@ Resources:
       Tags:
         - Key: Name
           Value: MiracleImpliedPrivateRouteTable
-
-  # Route from private subnet to internet via NAT
-  PrivateRouteToInternet:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref MiracleImpliedPrivateRouteTable
-      DestinationCidrBlock: "0.0.0.0/0"
-      NatGatewayId: !Ref MiracleImpliedNATGateway
 
   # Associate Private Subnet with Private Route Table
   AssociatePrivateRouteTable:
@@ -166,12 +142,6 @@ Outputs:
     Export:
       Name: InternetGatewayId
 
-  NATGatewayId:
-    Description: NAT Gateway ID
-    Value: !Ref MiracleImpliedNATGateway
-    Export:
-      Name: NATGatewayId
-
   PrivateRouteTableId:
     Description: Private Route Table ID
     Value: !Ref MiracleImpliedPrivateRouteTable
@@ -183,10 +153,3 @@ Outputs:
     Value: !Ref MiracleImpliedPublicRouteTable
     Export:
       Name: PublicRouteTableId
-
-  NatEIPAllocationId:
-    Description: Elastic IP Allocation ID for NAT Gateway
-    Value: !GetAtt MiracleImpliedNatEIP.AllocationId
-    Export:
-      Name: NatEIPAllocationId
-

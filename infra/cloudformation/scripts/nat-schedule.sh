@@ -9,6 +9,12 @@ aws_region=${2:-"ap-southeast-1"}
 path_to_file=${3:-"nat-schedule.yaml"}
 stack_name="NATScheduleStack"
 
+# Skip if the stack already exists
+if aws cloudformation describe-stacks --stack-name "$stack_name" >/dev/null 2>&1; then
+  echo "Stack $stack_name already exists. Skipping creation."
+  exit 0
+fi
+
 aws cloudformation create-stack \
         --stack-name $stack_name \
         --template-url https://$bucket_name.s3.$aws_region.amazonaws.com/$path_to_file \

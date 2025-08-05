@@ -96,7 +96,7 @@ Resources:
                   - "codeconnections:GetConnectionToken"
                   - "codeconnections:GetConnection"
                   - "codeconnections:UseConnection"
-                Resource: !ImportValue MIGitHubConnectionArn
+                Resource: !ImportValue GitHubConnectionArn
 
   # Create CodeBuild Project
   MICodeBuildProject:
@@ -111,7 +111,7 @@ Resources:
         ReportBuildStatus: true
         Auth:
           Type: CODECONNECTIONS
-          Resource: !ImportValue MIGitHubConnectionArn
+          Resource: !ImportValue GitHubConnectionArn
       Artifacts:
         Type: NO_ARTIFACTS
       Environment:
@@ -119,6 +119,11 @@ Resources:
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/amazonlinux-x86_64-standard:5.0
       ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: WORKFLOW_JOB_QUEUED
       VpcConfig:
         VpcId: !ImportValue VPCId
         Subnets:
@@ -135,3 +140,5 @@ Outputs:
   CodeBuildProjectName:
     Description: "CodeBuild Project Name"
     Value: !Ref MICodeBuildProject
+    Export:
+      Name: CodeBuildProjectName

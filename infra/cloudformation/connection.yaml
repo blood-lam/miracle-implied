@@ -13,9 +13,9 @@ Resources:
           Value: MIGitHubConnection
 
 Outputs:
-  MIGitHubConnectionArn:
+  GitHubConnectionArn:
     Description: ARN of the CodeStar connection to GitHub
     Value: !Ref MIGitHubConnection
     Export:
-      Name: MIGitHubConnectionArn
+      Name: GitHubConnectionArn
 

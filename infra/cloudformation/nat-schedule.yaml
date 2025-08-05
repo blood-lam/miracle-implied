@@ -1,35 +1,50 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda to enable/disable NAT Gateway to reduce costs
+Description: Lambda to enable/disable NAT Gateway via CloudFormation stack
 
 Resources:
-
-  LambdaExecutionRole:
+  NatGatewayControlLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: NatGatewayControlLambdaRole
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: NatGatewayPolicy
+        - PolicyName: NatGatewayControlPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
                   - ec2:CreateNatGateway
                   - ec2:DeleteNatGateway
                   - ec2:DescribeNatGateways
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeAddresses
+                  - ec2:ReleaseAddress
+                  - ec2:DisassociateAddress
                   - ec2:CreateRoute
-                  - ec2:CreateTags
                   - ec2:ReplaceRoute
                   - ec2:DeleteRoute
                   - ec2:DescribeRouteTables
+                  - ec2:CreateTags
+                  - cloudformation:CreateStack
                 Resource: "*"
+              - Effect: Allow
+                Action:
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackResources
+                Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/NATGatewayStack/*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: arn:aws:s3:::miracle-implied-cft-template/*
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
@@ -37,55 +52,86 @@ Resources:
                   - logs:PutLogEvents
                 Resource: "*"
 
+  CodebuildProjectControlLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CodebuildProjectControlLambdaRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodebuildProjectControlPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:UpdateProject
+                Resource:
+                  - !Sub
+                    - arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/{CodeBuildProjectName}
+                    - { CodeBuildProjectName: !ImportValue CodeBuildProjectName }
+
   NatGatewayToggleFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: ToggleNatGateway
-      Handler: index.handler
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: toggle-nat-gateway.handler
+      Role: !GetAtt NatGatewayControlLambdaRole.Arn
       Runtime: python3.13
       Timeout: 300
       Environment:
         Variables:
-          ALLOCATION_ID: !ImportValue NatEIPAllocationId
-          PUBLIC_SUBNET_ID: !ImportValue PublicSubnetId
-          PRIVATE_ROUTE_TABLE_ID: !ImportValue PrivateRouteTableId
+          NAT_GATEWAY_STACK: NATGatewayStack
+          BUCKET_NAME: miracle-implied-cft-template
+          PATH_TO_FILE: nat-gateway.yaml
       Code:
         S3Bucket: miracle-implied-cft-template
-        S3Key: toggle-nat-gateway/index.zip
+        S3Key: lambda-functions/toggle-nat-gateway.zip
 
-  # Schedule to TURN OFF at 10 PM UTC
+  CodebuildProjectToggleFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ToggleCodebuildProject
+      Handler: toggle-codebuild-project.handler
+      Role: !GetAtt CodebuildProjectControlLambdaRole.Arn
+      Runtime: python3.13
+      Timeout: 300
+      Environment:
+        Variables:
+          PROJECT_NAME: !ImportValue CodeBuildProjectName
+      Code:
+        S3Bucket: miracle-implied-cft-template
+        S3Key: lambda-functions/toggle-codebuild-project.zip
+
+  # EventBridge Rules
   ScheduleOff:
     Type: AWS::Events::Rule
     Properties:
       Name: ScheduleTurnOffNAT
-      ScheduleExpression: cron(0 15 * * ? *)  # 10PM UTC daily
+      ScheduleExpression: cron(0 15 * * ? *) # 10PM UTC daily
       State: DISABLED
-      # Enable this rule when you want to turn off NAT Gateway
-      # Change to ENABLED when you want to activate the schedule
-      # State: ENABLED
       Targets:
         - Arn: !GetAtt NatGatewayToggleFunction.Arn
           Id: "TurnOffNAT"
           Input: '{"action": "OFF"}'
 
-  # Schedule to TURN ON at 8 AM UTC
   ScheduleOn:
     Type: AWS::Events::Rule
     Properties:
       Name: ScheduleTurnOnNAT
-      ScheduleExpression: cron(0 1 * * ? *)  # 8AM UTC daily
+      ScheduleExpression: cron(0 1 * * ? *) # 8AM UTC daily
       State: DISABLED
-      # Enable this rule when you want to turn on NAT Gateway
-      # Change to ENABLED when you want to activate the schedule
-      # State: ENABLED
       Targets:
         - Arn: !GetAtt NatGatewayToggleFunction.Arn
           Id: "TurnOnNAT"
           Input: '{"action": "ON"}'
 
-  # Grant permissions for EventBridge to invoke Lambda
-  LambdaInvokePermission:
+  LambdaInvokePermissionOff:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref NatGatewayToggleFunction
